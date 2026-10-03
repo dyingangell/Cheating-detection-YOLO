@@ -1,0 +1,8 @@
+numpy~=2.2.6
+streamlit~=1.55.0
+opencv-python~=4.13.0.92
+pandas~=2.3.3
+ultralytics~=8.4.19
+redis==7.3.0
+torch==2.10.0+cu128
+msgpack~=1.1.0

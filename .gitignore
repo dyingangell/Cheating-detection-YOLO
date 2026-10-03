@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# IDE
+.idea/
+
+# Models (слишком тяжелые для Git)
+*.pt
+*.onnx
+models/
+
+# Video (бинарные файлы лучше хранить отдельно)
+video*/
+evidence_folder/
+
+# Environment
+.venv*/

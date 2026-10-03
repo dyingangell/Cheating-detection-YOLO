@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  # 1. База данных в памяти
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+
+  # 2. Твой основной обработчик (Worker)
+  worker:
+    build: .
+    command: python worker.py
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      - redis
+
+  # 3. Эмуляторы камер (пример для двух, можно размножить до 16)
+  cam_1:
+    build: .
+    command: python producer.py 1 /app/video/test7.mp4  # Путь внутри контейнера
+    volumes:
+      - .:/app  # Монтируем текущую папку uni в папку /app в контейнере
+    depends_on:
+      - redis
+    restart: always
+
+  cam_2:
+    build: .
+    command: python producer.py 2 /app/video/test7.mp4  # Путь внутри контейнера
+    volumes:
+      - .:/app  # Монтируем текущую папку uni в папку /app в контейнере
+    depends_on:
+      - redis
+    restart: always
+
+  # 4. Интерфейс мониторинга
+  dashboard:
+    build: .
+    command: streamlit run streamlit_app.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    depends_on:
+      - redis

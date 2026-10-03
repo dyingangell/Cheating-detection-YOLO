@@ -1,0 +1,139 @@
+# Real-time Exam Proctoring with YOLO11-Pose
+
+A computer vision system that monitors multiple camera streams during exams and flags
+suspicious student behaviour (head turns, looking away, leaving the frame) using
+human pose estimation.
+
+> University project · Computer Vision course
+
+---
+
+## Overview
+
+Instead of training a custom classifier on raw images, the system relies on **pose keypoints**
+(nose, eyes, ears, shoulders) produced by **YOLO11-pose**. Simple, interpretable geometric
+metrics are computed from these keypoints (head yaw/offset relative to shoulders, keypoint
+visibility). A **temporal warning accumulator** then decides whether the behaviour is really
+suspicious or just a short random movement.
+
+The pipeline is built as a distributed system: camera producers push frames to **Redis**,
+and inference workers consume them independently. This makes it easy to scale to many
+cameras.
+
+## Key features
+
+- **Pose-based behaviour analysis.** YOLO11-pose keypoints are turned into head-orientation metrics.
+- **Temporal warning logic.** Warnings are raised only when suspicious behaviour persists over
+  several frames, which reduces false positives from single noisy detections.
+- **Multi-camera pipeline.** Producers push frames to Redis and workers run inference in parallel.
+- **Camera emulation.** Any set of video files can be replayed as live camera streams for testing.
+- **Interfaces.** A Streamlit web dashboard, plus a desktop viewer with a separate warnings window.
+- **Model comparison.** YOLO11 (l / x) pose models compared against a Faster R-CNN baseline.
+- **Dockerized.** Redis and the workers start with `docker-compose`.
+- **Tested.** A pytest suite covers pose metrics, warning accumulation and frame decoding.
+
+## Architecture
+```
+┌──────────────┐     ┌──────────┐     ┌───────────┐     ┌───────────────────┐
+│ Cameras /    │     │ producer │     │   Redis   │     │ worker            │
+│ video files  ├────►│ (encode) ├────►│  (queue)  ├────►│ YOLO11-pose       │
+└──────────────┘     └──────────┘     └───────────┘     │ + pose metrics    │
+                                                        │ + warning logic   │
+                                                        └─────────┬─────────┘
+                                                                  │
+                                    ┌─────────────────────────────┼──────────────────┐
+                                    ▼                             ▼                  ▼
+                           Streamlit dashboard           Desktop viewer      Post-processing
+                                                        + warnings window   (evidence clips)
+```
+
+## Results
+
+The models were evaluated on recorded classroom videos with manually annotated suspicious episodes.
+
+| Model                    | Accuracy (approx.) | Notes                                    |
+|--------------------------|--------------------|------------------------------------------|
+| YOLO11l-pose             | ~70–80%            | Nearly the same quality as the x model   |
+| YOLO11x-pose             | ~70–80%            | Larger model gave no significant gain    |
+| Faster R-CNN (baseline)  | lower              | Detection only, no keypoints             |
+
+### Key finding
+
+**Model size was not the bottleneck.** Moving from YOLO11l to YOLO11x barely changed the
+accuracy. Most errors came from the **input data**, not from the model:
+
+1. **Camera angle.** With high or side-mounted cameras, faces and shoulders are seen at steep
+   angles. Head-turn metrics become ambiguous, and some keypoints are occluded or not detected.
+2. **Video quality.** Low resolution, compression artifacts and poor lighting produce
+   low-confidence, "jittery" keypoints. Random shifts of the nose keypoint look like head turns
+   and cause false positives.
+
+This means that better camera placement (frontal, at eye level) and higher-quality streams
+would likely improve the results more than a heavier model.
+
+## Tech stack
+
+| Area           | Tools                                       |
+|----------------|---------------------------------------------|
+| CV / ML        | Ultralytics YOLO11-pose, Faster R-CNN, OpenCV |
+| Inference      | PyTorch, ONNX, TensorRT                     |
+| Infrastructure | Redis, Docker, docker-compose               |
+| UI             | Streamlit, desktop viewer                   |
+| Testing        | pytest                                      |
+
+## Quick start
+```bash
+# 1. Install dependencies
+pip install -r requirements.txt
+
+# 2. Start Redis
+docker-compose up -d redis
+
+# 3. Emulate camera streams from demo videos
+python tools/camerasEmulation.py
+
+# 4. Run an inference worker
+python src/worker.py
+
+# 5. Open the dashboard
+streamlit run apps/streamlit_app.py
+```
+
+Model weights (`yolo11l-pose.pt`, `yolo11x-pose.pt`) are downloaded automatically by Ultralytics
+on first run. To use them offline, place them in `models/`.
+
+### Run tests
+```bash
+pytest tests/
+```
+
+## Project structure
+```
+src/           core pipeline: proctoring engine, workers, viewers, training script
+apps/          Streamlit dashboard and web interface
+tools/         camera emulation, frame producer, post-processing, visualisation
+experiments/   Faster R-CNN baseline for comparison
+tests/         pytest suite (pose metrics, warning logic, frame decoding)
+docs/          method description and known issues
+assets/demo/   short demo video
+models/        model weights (not tracked in git)
+```
+
+## Limitations
+
+- Accuracy depends heavily on camera placement. Steep angles break the head-orientation metrics.
+- Low-confidence keypoints on low-quality video produce false positives.
+- Rule-based metrics need manual threshold tuning for each classroom setup.
+
+## Future work
+
+- **Keypoint smoothing.** Apply a Kalman or One-Euro filter and ignore low-confidence keypoints
+  to cut jitter-based false positives.
+- **Temporal model.** Train a small LSTM or 1D-CNN on keypoint sequences instead of hand-crafted thresholds.
+- **Per-camera calibration.** Normalise metrics for the camera angle.
+- **Gaze estimation.** Add a dedicated head-pose or gaze model for frontal cameras.
+- **Proper benchmark.** Build a larger annotated dataset and report precision, recall and F1
+  separately for each camera setup.
+
+More details: [docs/method_description.md](docs/method_description.md) ·
+[docs/ISSUES.md](docs/ISSUES.md)

@@ -1,0 +1,8 @@
+.venv
+.venv1
+__pycache__
+.git
+.idea
+*.avi
+evidence_folder
+*.pt
